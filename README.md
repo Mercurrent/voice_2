@@ -11,7 +11,7 @@
 
 ```
 pip install -r requirements.txt
-pyinstaller --onefile --windowed --clean --hidden-import=omegaconf main.py
+pyinstaller --onefile --windowed --clean --hidden-import=omegaconf --add-data "C:\PATH-TO-YOUR-FFMPEG\ffmpeg.exe;." main.py
 ```
 
 Получить exe для synthesizer_interface.py:
@@ -19,7 +19,13 @@ pyinstaller --onefile --windowed --clean --hidden-import=omegaconf main.py
 ```
 cd synthesizer_interface
 pip install -r requirements.txt
-pyinstaller --onefile --windowed --clean synthesizer_interface.py
+pyinstaller --onefile --windowed --clean --hidden-import=omegaconf --add-data "C:\PATH-TO-YOUR-FFMPEG\ffmpeg.exe;." synthesizer_interface.py
+
+```
+
+Для отладки exe с консолью
+```
+pyinstaller --onefile --console --clean --hidden-import=omegaconf --add-data "C:\PATH-TO-YOUR-FFMPEG\ffmpeg.exe;." main.py
 ```
 
 
