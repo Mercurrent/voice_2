@@ -6,35 +6,10 @@ import time
 import torch
 from pydub import AudioSegment
 import re
-
 import numpy as np
 
-def setup_env():
-    # torch.hub logs to sys.stderr while windowed app has sys.stderr = None
-    if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w")
-    if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w")
-
-    # Set up torch backend for Mac
-    if sys.platform == 'darwin':
-        import torch
-        torch.backends.quantized.engine = 'qnnpack'
-
-    # setup path to ffmpeg util for mp3 generation
-    if getattr(sys, 'frozen', False):
-        if sys.platform == 'win32':
-            ffmpeg_path = os.path.join(sys._MEIPASS, "ffmpeg.exe")
-            AudioSegment.converter = ffmpeg_path
-        else:
-            # On Mac, use system ffmpeg
-            AudioSegment.converter = "ffmpeg"
-    else:
-        AudioSegment.converter = "ffmpeg"
-
-    # Set up Qt platform integration for Mac
-    if sys.platform == 'darwin':
-        os.environ['QT_MAC_WANTS_LAYER'] = '1'
+from synthesizer_interface.utils import setup_env
+from synthesizer_interface.word_suggestions import WordSuggester
 
 class UiMainWindow(object):
     def __init__(self):
@@ -54,9 +29,8 @@ class UiMainWindow(object):
         )
         self.sample_rate = 48000
 
-        # Load word suggestions
-        self.custom_dict_path = self.get_custom_dict_path()
-        self.words = self.load_words()
+        # Initialize word suggestions
+        self.word_suggester = WordSuggester()
         self.suggestion_buttons = []
 
     def get_model_dir(self):
@@ -289,6 +263,8 @@ class UiMainWindow(object):
         print("in generation", text, speaker)
         put_accent = True
         put_yo = True
+        
+        # Generate audio
         audio = self.model.apply_tts(
             text=text,
             speaker=speaker,
@@ -296,9 +272,22 @@ class UiMainWindow(object):
             put_accent=put_accent,
             put_yo=put_yo
         )
+        
+        # Normalize audio to prevent distortion
+        audio = audio / torch.abs(audio).max()
+        # Scale to 16-bit range
+        audio = (audio * 32767).clamp(-32768, 32767)
+        
         return audio
 
     def generate_voice(self):
+        """Generate and play voice for current text"""
+        text = self.plain_text.toPlainText()
+        
+        # Update user memory before generating voice
+        self.word_suggester.user_memory.update_from_text(text)
+        
+        # Generate and play audio
         audio = self.produce_audio()
         sou_voi.play(audio, self.sample_rate)
         time.sleep(len(audio) / self.sample_rate + 0.3)
@@ -306,14 +295,44 @@ class UiMainWindow(object):
 
     def download_audio(self):
         try:
+            # Get text and clean it for filename
+            text = self.plain_text.toPlainText().strip()
+            clean_text = re.sub(r'[.,!?;:"\'\(\)\[\]]', '', text)  # Remove punctuation
+            clean_text = re.sub(r'\s+', '_', clean_text)  # Replace spaces with underscores
+            
+            # Get current datetime
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            
+            # Create filename (limit text length to avoid too long filenames)
+            max_text_length = 50
+            if len(clean_text) > max_text_length:
+                clean_text = clean_text[:max_text_length] + '...'
+            
+            filename = f"{clean_text}_{timestamp}.mp3"
+            
+            # Generate and process audio
             audio_data = self.produce_audio().detach().cpu().numpy()
-            self.diagnoze_audio(audio_data)
+            
+            # Convert to 16-bit PCM
+            audio_data = audio_data.astype(np.int16)
+            
             audio = AudioSegment(
                 audio_data.tobytes(),
                 frame_rate=self.sample_rate,
-                sample_width=audio_data.dtype.itemsize,
-                channels=1)
-            audio.export("test.mp3", format="mp3")
+                sample_width=2,  # Explicitly set to 16-bit
+                channels=1
+            )
+            
+            # Export with higher quality settings
+            audio.export(
+                filename,
+                format="mp3",
+                bitrate="192k",
+                parameters=["-q:a", "0"]  # Use highest quality setting
+            )
+            
+            print(f"Saved audio as: {filename}")
+            
         except Exception as e:
             print(e, "problem in download")
 
@@ -331,79 +350,15 @@ class UiMainWindow(object):
 
     def update_suggestions(self):
         """Update suggestion buttons based on current text"""
-        text = self.plain_text.toPlainText().strip().lower()
+        text = self.plain_text.toPlainText()
+        suggestions = self.word_suggester.get_suggestions(text, 5)
         
-        # Get last word being typed using regex for Russian letters
-        russian_word_pattern = r'[а-яёА-ЯЁ]+'
-        words = re.findall(russian_word_pattern, text)
-
-        # Check if we should add this word to dictionary
-        if ' ' in text:  # If there are multiple words
-            completed_words = text.split()[:-1]  # Get all but last word
-            for word in completed_words:
-                if re.match(russian_word_pattern, word):  # If it's a Russian word
-                    print("Adding new word to dictionary", word)
-                    self.add_to_custom_dictionary(word)
-
-        if not words:
-            for btn in self.suggestion_buttons:
-                btn.setText("")
-            return
-
-        last_word = words[-1].lower()
-        
-        
-        # Find all matching words
-        matching_words = [w for w in self.words if w.lower().startswith(last_word)]
-        
-        # Get diverse suggestions
-        suggestions = self.get_diverse_suggestions(matching_words, 5)
-
-        # Update button texts (keep all buttons visible)
+        # Update button texts
         for i, btn in enumerate(self.suggestion_buttons):
             if i < len(suggestions):
                 btn.setText(suggestions[i])
             else:
                 btn.setText("")
-
-    def get_diverse_suggestions(self, words, num_suggestions):
-        """Select diverse words from the matching words"""
-        if not words:
-            return []
-        if len(words) <= num_suggestions:
-            return words
-
-        # Sort words by length to help select different sized words
-        words_by_length = sorted(words, key=len)
-        
-        # Get words from different length ranges
-        result = []
-        total_words = len(words_by_length)
-        
-        # Try to get words from different parts of the sorted list
-        indices = [
-            0,  # shortest word
-            total_words // 4,  # word from first quarter
-            total_words // 2,  # median length word
-            (3 * total_words) // 4,  # word from last quarter
-            total_words - 1,  # longest word
-        ]
-        
-        # Get unique words (some indices might point to same/similar length words)
-        seen = set()
-        for idx in indices:
-            word = words_by_length[idx]
-            if word not in seen:
-                seen.add(word)
-                result.append(word)
-        
-        # If we need more words, fill with random selections
-        if len(result) < num_suggestions:
-            import random
-            remaining = [w for w in words if w not in seen]
-            result.extend(random.sample(remaining, min(num_suggestions - len(result), len(remaining))))
-        
-        return result[:num_suggestions]
 
     def use_suggestion(self, word):
         """Insert the suggested word into text"""
