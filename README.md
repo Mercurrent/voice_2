@@ -85,13 +85,10 @@ The application stores user data in:
 
 ## Features
 1) Синтезатор речь работает без интернета. 
-2) Без электронного голоса. 
-3) Создание функции выбора голоса: мужской или женский. 
-4) Создание функции для скачивания файла аудио
+2) Выбор голоса: мужской или женский. 
+3) Функция для скачивания файла аудио
 
 ## Note for Mac Users
 - The application uses PyQt5 which is compatible with macOS
 - ffmpeg is required and can be installed via Homebrew
 - No need to explicitly include ffmpeg in the build as it will use the system-installed version
-
-Words are extracted from project https://github.com/Badestrand/russian-dictionary

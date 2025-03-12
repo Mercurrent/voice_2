@@ -93,16 +93,24 @@ class WordSuggester:
         if is_word_completed:
             # If word is completed, suggest next words based on the last completed word
             if words:  # If we have at least one word
+                print("Word completed, suggesting next words based on bigrams")
                 return self.get_bigram_suggestions(words[-1], "", n)
             return []
         else:
             # If word is not completed, provide suggestions for current word
             last_word = words[-1]
             if len(words) == 1:
+                print("First word not completed, suggesting next words based on unigrams")
                 return self.get_unigram_suggestions(last_word, n)
             else:
+                print("Last word not completed, suggesting next words based on bigrams and unigrams")
                 prev_word = words[-2]
-                return self.get_bigram_suggestions(prev_word, last_word, n)
+                suggesting_bigram = self.get_bigram_suggestions(prev_word, last_word, n)
+                suggesting_unigram = self.get_unigram_suggestions(last_word, n)
+                # remove duplicates
+                suggesting = list(set(suggesting_bigram + suggesting_unigram))
+                
+                return suggesting
 
     def get_unigram_suggestions(self, prefix: str, n: int = 5) -> list:
         # First check user memory
@@ -115,6 +123,7 @@ class WordSuggester:
             for word, freq in words_freq:
                 if freq >= self.user_memory.frequency_threshold:
                     user_suggestions.add(word)
+        print(f"User suggestions: {user_suggestions}")
         
         # Then get suggestions from main trie, excluding ones we already have
         main_suggestions = []
@@ -151,3 +160,35 @@ class WordSuggester:
         
         # Combine suggestions, maintaining order (user memory first)
         return list(user_suggestions) + main_suggestions 
+
+
+    # these functions not used in prod, for debugging
+    def word_exists(self, word: str) -> bool:
+        # Check if a word exists in the unigram trie.
+        cleaned_word = self.clean_word(word)
+        return self.unigram_trie.search(cleaned_word) is not None 
+
+    def get_all_bigrams_for_word(self, word: str) -> list[str]:
+        # Returns all bigrams (second words) that follow the given word.
+        cleaned_word = self.clean_word(word)
+        bigrams = []
+        
+        # Check user memory first
+        if self.user_memory and cleaned_word in self.user_memory.bigram_tries:
+            words_freq = []
+            self.user_memory.bigram_tries[cleaned_word]._collect_words_with_prefix(
+                self.user_memory.bigram_tries[cleaned_word].root, "", words_freq)
+            # Add words that meet frequency threshold
+            bigrams.extend(word for word, freq in words_freq 
+                         if freq >= self.user_memory.frequency_threshold)
+        
+        # Then check main bigram tries
+        if cleaned_word in self.bigram_tries:
+            words_freq = []
+            self.bigram_tries[cleaned_word]._collect_words_with_prefix(
+                self.bigram_tries[cleaned_word].root, "", words_freq)
+            # Add words not already included from user memory
+            bigrams.extend(word for word, _ in words_freq 
+                         if word not in bigrams)
+        
+        return bigrams 

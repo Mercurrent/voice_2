@@ -92,62 +92,6 @@ class UiMainWindow(object):
             traceback.print_exc()
             raise
 
-    def get_custom_dict_path(self):
-        """Get path to custom dictionary file"""
-        if getattr(sys, 'frozen', False):
-            # If running as bundled app
-            base_dir = os.path.dirname(sys.executable)
-        else:
-            # If running from source
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(base_dir, 'custom_dictionary.txt')
-
-    def load_words(self):
-        """Load words from data files"""
-        words = set()
-        data_dir = 'data'
-        if getattr(sys, 'frozen', False):
-            data_dir = os.path.join(sys._MEIPASS, 'data')
-        print(f"Looking for data in: {data_dir}")
-        print(f"Directory exists: {os.path.exists(data_dir)}")
-        if os.path.exists(data_dir):
-            print(f"Contents of {data_dir}:")
-            print(os.listdir(data_dir))
-            
-        try:
-            for words_filename in ['verbs-processed.txt', 'nouns_processed.txt', 'adjectives_processed.txt', 'adverbs_processed.txt', 'others_processed.txt']:
-                words_path = os.path.join(data_dir, words_filename)
-                print(f"Looking for file: {words_path}")
-                if os.path.exists(words_path):
-                    with open(words_path, 'r', encoding='utf-8') as f:
-                        words.update(line.strip() for line in f)
-            print(f"Loaded {len(words)} built-in words")
-            
-            # Load custom dictionary
-            if os.path.exists(self.custom_dict_path):
-                with open(self.custom_dict_path, 'r', encoding='utf-8') as f:
-                    custom_words = set(line.strip() for line in f)
-                    words.update(custom_words)
-                    print(f"Loaded {len(custom_words)} custom words")
-
-        except Exception as e:
-            print(f"Error loading words: {e}")
-            import traceback
-            traceback.print_exc()
-            
-        return sorted(list(words))
-
-    def add_to_custom_dictionary(self, word):
-        """Add a new word to custom dictionary"""
-        # Only add if it's not already in our word list
-        if word not in self.words:
-            try:
-                with open(self.custom_dict_path, 'a', encoding='utf-8') as f:
-                    f.write(word + '\n')
-                self.words = sorted(self.words + [word])
-                print(f"Added new word to custom dictionary: {word}")
-            except Exception as e:
-                print(f"Error adding word to custom dictionary: {e}")
 
     def create_suggestion_buttons(self):
         """Create a row of suggestion buttons"""
@@ -287,11 +231,34 @@ class UiMainWindow(object):
         # Update user memory before generating voice
         self.word_suggester.user_memory.update_from_text(text)
         
-        # Generate and play audio
+        # Generate audio
         audio = self.produce_audio()
-        sou_voi.play(audio, self.sample_rate)
-        time.sleep(len(audio) / self.sample_rate + 0.3)
+        
+        # Convert to numpy array and ensure proper 16-bit PCM format
+        audio_data = audio.detach().cpu().numpy()
+        audio_data = audio_data.astype(np.int16)
+        
+        # Play the properly formatted audio
+        sou_voi.play(audio_data, self.sample_rate, blocking=False)
+        time.sleep(len(audio_data) / self.sample_rate + 0.3)
         sou_voi.stop()
+
+    def get_downloads_dir(self):
+        """Get or create downloads directory for audio files"""
+        if getattr(sys, 'frozen', False):
+            # If running as bundled app, use directory next to executable
+            # base_dir = os.path.dirname(sys.executable)
+            # On Mac:
+            # base_dir = os.path.expanduser('~/Downloads')
+            # On Windows
+            base_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+        else:
+            # If running from source, use user's home directory
+            base_dir = os.path.expanduser('~')
+        
+        downloads_dir = os.path.join(base_dir, 'voice_downloads')
+        os.makedirs(downloads_dir, exist_ok=True)
+        return downloads_dir
 
     def download_audio(self):
         try:
@@ -308,7 +275,9 @@ class UiMainWindow(object):
             if len(clean_text) > max_text_length:
                 clean_text = clean_text[:max_text_length] + '...'
             
-            filename = f"{clean_text}_{timestamp}.mp3"
+            # Get downloads directory and create full file path
+            downloads_dir = self.get_downloads_dir()
+            filepath = os.path.join(downloads_dir, f"{clean_text}_{timestamp}.mp3")
             
             # Generate and process audio
             audio_data = self.produce_audio().detach().cpu().numpy()
@@ -325,16 +294,18 @@ class UiMainWindow(object):
             
             # Export with higher quality settings
             audio.export(
-                filename,
+                filepath,
                 format="mp3",
                 bitrate="192k",
                 parameters=["-q:a", "0"]  # Use highest quality setting
             )
             
-            print(f"Saved audio as: {filename}")
+            print(f"Saved audio as: {filepath}")
             
         except Exception as e:
-            print(e, "problem in download")
+            print(f"Error downloading audio: {e}")
+            import traceback
+            traceback.print_exc()
 
     def diagnoze_audio(self, audio_data):
         print("Shape", audio_data.shape)
