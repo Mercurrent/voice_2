@@ -11,11 +11,19 @@ import numpy as np
 from synthesizer_interface.utils import setup_env
 from synthesizer_interface.word_suggestions import WordSuggester
 
+# Ensure ffmpeg is available from the bundled location in the executable
+if getattr(sys, 'frozen', False):  # Check if running as a frozen executable
+    ffmpeg_path = os.path.join(sys._MEIPASS, "ffmpeg")
+    AudioSegment.ffmpeg = ffmpeg_path
+else:
+    # On development environment (not frozen)
+    AudioSegment.ffmpeg = r"C:\Users\Joe\miniconda3\envs\voice\Library\bin\ffmpeg.exe"  # Change to your local path during development
+
+
 class UiMainWindow(object):
     def __init__(self):
         # Initialize torch backend before loading model on Mac
         if sys.platform == 'darwin':
-            import torch
             torch.backends.quantized.engine = 'qnnpack'
         
         # Load model
@@ -281,6 +289,7 @@ class UiMainWindow(object):
             
             # Generate and process audio
             audio_data = self.produce_audio().detach().cpu().numpy()
+            print(f"audio ready to download into {filepath}")
             
             # Convert to 16-bit PCM
             audio_data = audio_data.astype(np.int16)

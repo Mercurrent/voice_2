@@ -19,6 +19,19 @@ Data taken from https://ruscorpora.ru/page/corpora-freq
 
 ## Build Commands
 
+Before anything:
+
+```bash
+cd synthesizer_interface
+pip install pyinstaller
+pip install -r requirements.txt
+```
+Fow windows building install ffmpeg, e.g. for conda:
+
+```bash
+conda install -c conda-forge ffmpeg
+```
+
 ### Mac OS
 
 Console version:
@@ -60,13 +73,17 @@ pyinstaller --onefile --windowed --clean \
 Console version:
 ```bash
 cd synthesizer_interface
-pyinstaller --onefile --console --clean --hidden-import=omegaconf --hidden-import=PyQt5.QtCore --hidden-import=PyQt5.QtGui --hidden-import=PyQt5.QtWidgets --hidden-import=synthesizer_interface --hidden-import=synthesizer_interface.trie --hidden-import=synthesizer_interface.utils --hidden-import=synthesizer_interface.word_suggestions --add-data "data;data" --paths=".." synthesizer_interface.py
+pyinstaller --onefile --console --clean --hidden-import=omegaconf --hidden-import=PyQt5 --hidden-import=PyQt5.sip --hidden-import=PyQt5.QtCore --hidden-import=PyQt5.QtGui --hidden-import=PyQt5.QtWidgets --hidden-import=synthesizer_interface --hidden-import=synthesizer_interface.trie --hidden-import=synthesizer_interface.utils --hidden-import=synthesizer_interface.word_suggestions \
+--add-binary "PATH-TO-YOUR-FFMPEG;ffmpeg" \
+--add-data "data;data" --paths=".." synthesizer_interface.py
 ```
 
 GUI version (no console):
 ```bash
 cd synthesizer_interface
-pyinstaller --onefile --windowed --clean --hidden-import=omegaconf --hidden-import=PyQt5.QtCore --hidden-import=PyQt5.QtGui --hidden-import=PyQt5.QtWidgets --hidden-import=synthesizer_interface --hidden-import=synthesizer_interface.trie --hidden-import=synthesizer_interface.utils --hidden-import=synthesizer_interface.word_suggestions --add-data "data;data" --paths=".." synthesizer_interface.py
+pyinstaller --onefile --windowed --clean --additional-hooks-dir=./hooks --collect-all PyQt5 --collect-all omegaconf --hidden-import=omegaconf --hidden-import=PyQt5 --hidden-import=PyQt5.sip --hidden-import=PyQt5.QtCore --hidden-import=PyQt5.QtGui --hidden-import=PyQt5.QtWidgets --hidden-import=synthesizer_interface --hidden-import=synthesizer_interface.trie --hidden-import=synthesizer_interface.utils --hidden-import=synthesizer_interface.word_suggestions \
+--add-binary "PATH-TO-YOUR-FFMPEG;ffmpeg" \
+--add-data "data;data" --paths=".." synthesizer_interface.py
 ```
 
 Note: The difference between Windows and Mac commands is in the path separator:
